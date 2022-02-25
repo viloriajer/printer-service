@@ -3,12 +3,18 @@ const PrinterTypes = require("node-thermal-printer").types;
 const printers = require("@thiagoelg/node-printer");
 const fs = require("fs");
 const express = require("express");
+const cors = require("cors");
+const { allowedNodeEnvironmentFlags } = require("process");
+const { json } = require("express");
 const port = 3000;
 
 const app = express();
+
+app.use(cors());
+app.use(json());
+
 // const express = require('')
-let printMachine = new ThermalPrinter({
-  type: PrinterTypes.STAR,
+let labelPrinter = new ThermalPrinter({
   interface: "printer:Munbyn ITPP941",
   driver: require("@thiagoelg/node-printer"),
   // characterSet: "PC437_USA",
@@ -28,28 +34,70 @@ const object = {
   OrderId: 12345,
   Items: [
     { name: "item1", quantity: 1, modifiers: ["option1"] },
-    { name: "item2", quantity: 1, modifiers: ["option1", "option2"] },
+    // { name: "item2", quantity: 1, modifiers: ["option1", "option2"] },
   ],
 };
 const data = [1, 2, 3, 4, 5];
-async function printReceipt() {
-  const { Location, Customer, Items, OrderId } = object;
+async function printReceipt(req) {
+  const { Customer, Items, OrderId } = req.body;
+  try {
+    starPrinter.println(" ");
+    starPrinter.setTextDoubleHeight();
+    starPrinter.setTextDoubleWidth();
+    starPrinter.println(" ");
+    starPrinter.println(`Customer: ${Customer}`);
+    starPrinter.println(`Order Number: ${OrderId}`);
+    starPrinter.drawLine();
+    starPrinter.setTextNormal();
+    starPrinter.alignLeft();
+    Items.forEach((num) => {
+      starPrinter.bold();
+      starPrinter.setTextDoubleHeight();
+      starPrinter.setTextDoubleWidth();
+      starPrinter.println(num.name);
+      starPrinter.setTextNormal();
+      num.modifiers.forEach((m) => starPrinter.println(`   ${m}`));
+      starPrinter.newLine();
+    });
+    starPrinter.cut();
+    starPrinter.execute();
+    starPrinter.clear();
+  } catch (error) {
+    console.log("error: ", error);
+  }
+}
 
-  starPrinter.setTextDoubleHeight();
-  starPrinter.setTextDoubleWidth();
-  starPrinter.newLine();
-  starPrinter.println(`Location: ${Location}`);
-  starPrinter.println(`Customer: ${Customer}`);
-  starPrinter.println(`Order Number: ${OrderId}`);
-  starPrinter.drawLine();
-  starPrinter.setTextNormal();
-  starPrinter.alignLeft();
-  Items.forEach((num) => {
-    starPrinter.println(num.name);
-    num.modifiers.forEach((m) => starPrinter.println(`   ${m}`));
-    starPrinter.newLine();
-  });
-  starPrinter.cut();
+async function printLabel() {
+  //   const command = `\0
+  // SIZE 102 mm,152 mm
+  // SET RIBBON OFF
+  // REFERENCE 0,0
+  // GAP 3 mm,0 mm
+  // OFFSET 0 mm
+  // DENSITY 6
+  // SPEED 5
+  // SETC AUTODOTTED OFF
+  // CLS
+  // TEXT 10,10,1,0,1,1,"Please work this time"
+  // PRINT 1,1
+  // `;
+  const command = `\0
+SIZE 102 mm,152 mm
+SET RIBBON OFF
+REFERENCE 0,0
+GAP 3 mm,0 mm
+OFFSET 0 mm
+DENSITY 12
+SPEED 5
+SETC AUTODOTTED OFF
+CLS
+TEXT 300,500,"0",0,5,6,"New"
+TEXT 300,800,"0",0,2,2,"Line"
+${object.Items.map((item, index) => {
+  return `TEXT 300,650,"0",0,2,2,"${item.name}"`;
+})}
+PRINT 1,1
+`;
   try {
     // printers.printDirect({
     //   data: fs.readFileSync("./assets/text.backup.prn"),
@@ -63,16 +111,10 @@ async function printReceipt() {
     //   },
     // });
 
-    starPrinter.execute();
-  } catch (error) {
-    console.log("error: ", error);
-  }
-}
-
-function printLabel() {
-  try {
+    // var test = labelPrinter.println("tesssssstttt");
+    // console.log(test);
     printers.printDirect({
-      data: fs.readFileSync("./assets/text.backup.prn"),
+      data: Buffer.from(command),
       printer: "Munbyn ITPP941",
       type: "RAW",
       error: function (err) {
@@ -87,16 +129,18 @@ function printLabel() {
   }
 }
 
-console.log(printers.getPrinters());
-
 app.post("/printReceipt", (req, res) => {
-  printReceipt();
+  printReceipt(req);
   res.sendStatus(200);
 });
 
 app.post("/printLabel", (req, res) => {
   printLabel();
   res.sendStatus(200);
+});
+
+app.post("/test", (req, res) => {
+  res.send("You got it!");
 });
 
 app.listen(port, () => {
